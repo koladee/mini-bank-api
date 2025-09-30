@@ -6,10 +6,118 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "windows"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum Currency {
+  USD
+  EUR
+}
+
+enum TransactionType {
+  transfer
+  exchange
+}
+
+enum TransactionStatus {
+  committed
+  failed
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(user)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  accounts     Account[]
+  txsInitiated Transaction[] @relation("TxInitiator")
+  auditLogs    AuditLog[]
+}
+
+model Account {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  Currency
+  balance   Decimal   @db.Decimal(18, 2)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  ledgerEntries Ledger[]
+
+  @@unique([userId, currency])
+  @@index([userId])
+  @@index([currency])
+}
+
+model Transaction {
+  id               String            @id @default(uuid())
+  type             TransactionType
+  status           TransactionStatus
+  initiatorUserId  String
+  initiator        User              @relation("TxInitiator", fields: [initiatorUserId], references: [id], onDelete: SetNull)
+  baseCurrency     Currency
+  amount           Decimal           @db.Decimal(18, 2)
+  meta             Json?
+  createdAt        DateTime          @default(now())
+
+  ledgerEntries    Ledger[]
+  idempotencyKeys  IdempotencyKey[]
+  
+  @@index([initiatorUserId, createdAt])
+  @@index([type, createdAt])
+}
+
+model Ledger {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  currency      Currency
+  amount        Decimal     @db.Decimal(18, 2) // positive or negative
+  createdAt     DateTime    @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([transactionId])
+}
+
+model IdempotencyKey {
+  id            String      @id @default(uuid())
+  key           String
+  userId        String
+  transactionId String?
+  status        String      // "stored" | "completed" | "failed"
+  requestHash   String?
+  responseJson  Json?
+  createdAt     DateTime    @default(now())
+
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@unique([key, userId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id])
+  action     String
+  entity     String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
 }
