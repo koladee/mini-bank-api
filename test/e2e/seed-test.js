@@ -4,7 +4,7 @@ const argon2 = require('argon2');
 const prisma = new PrismaClient();
 
 async function main() {
-
+// Adding this to make a change for commit
   await prisma.ledger.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.account.deleteMany();
